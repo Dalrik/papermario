@@ -351,7 +351,7 @@ void pause_badges_draw_bp_orbs(s32 orbState, s32 x, s32 y) {
     }
 }
 
-#ifdef NON_MATCHING
+//#ifndef NON_MATCHING
 
 static inline s8 getMaxBP(void) {
     return gPlayerData.maxBP;
@@ -392,6 +392,9 @@ extern s32 D_802703FC;
 //    1.3567325616400228e+243,
 //}; // const
 
+// REMAINING ISSUES:
+// 1. playerEquippedBadges loads its value too late, which also swaps s2 and s3 for the remainder of the badge list loop
+
 void pause_badges_draw_contents(s32 dummy, s32 menuX, s32 menuY, s32 menuWidth, s32 menuHeight) {
     PauseItemPage* currentBadgePage = &gBadgeMenuPages[gBadgeMenuCurrentPage];
 
@@ -400,12 +403,12 @@ void pause_badges_draw_contents(s32 dummy, s32 menuX, s32 menuY, s32 menuWidth, 
     s32 scissorLRx;
     s32 scissorLRy;
 
-    s32 iconSlot;
+    s32 pageID;
     s32 layer;
+    s32 iconSlot;
 
-    s32 availableBP;
-    s32 selectedRow;
     s32 selectedCol;
+    s32 selectedRow;
 
     s32 msgID;
     s32 msgPosX;
@@ -413,24 +416,26 @@ void pause_badges_draw_contents(s32 dummy, s32 menuX, s32 menuY, s32 menuWidth, 
     s32 msgOpacity;
     s32 msgStyle;
     s32 msgPalette;
-
-    s32 badgeListX;
-    s32 badgeListY;
+    s32 availableBP;
 
     s32 scratch;
 
-    s32 canEquipSelectedBadge = FALSE;
     s32 selectedBadgeCostBP = 0;
+    s32 canEquipSelectedBadge = FALSE;
 
-    s32 i;
+    PauseItemPage* page;
 
     msgStyle = 1;
+    msgPalette = 0xA;
     availableBP = gPlayerData.maxBP - pause_get_total_equipped_bp_cost();
     selectedRow = gBadgeMenuSelectedIndex / currentBadgePage->numCols;
     selectedCol = gBadgeMenuSelectedIndex % currentBadgePage->numCols;
+
+    // Menu background?
     draw_box(4, (s32) &D_8026FC48, menuX + 0x54, menuY, 0, menuWidth - 0x54, menuHeight, 0xFF, 0, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, NULL, 0, NULL, 0x140, 0xF0, NULL);
+
+    // "BP NEEDED" text?
     set_hud_element_render_pos(gBadgeMenuIconIDs[20], menuX + 0xF1, menuY + 0xB);
-    msgPalette = 0xA;
     draw_hud_element_3(gBadgeMenuIconIDs[20]);
 
     // 1ce8
@@ -457,34 +462,35 @@ void pause_badges_draw_contents(s32 dummy, s32 menuX, s32 menuY, s32 menuWidth, 
     }
     gDPSetScissor(gMasterGfxPos++, G_SC_NON_INTERLACE, scissorULx, scissorULy, scissorLRx, scissorLRy);
 
-    badgeListX = menuX + 0x77;
-    badgeListY = menuY + 0x11;
     iconSlot = 0;
     for (layer = 0; layer < 3; ++layer) {
-        s32 pageID;
         for (pageID = 0; pageID < 0x14; ++pageID) {
             // 1e44
+            s32 badgeListX = menuX + 0x77;
+            s32 badgeListY = menuY + 0x11;
             s32 indexInPage;
-            PauseItemPage* page = &gBadgeMenuPages[pageID];
+            s32* iconIDs = gBadgeMenuIconIDs;
+
+            page = &gBadgeMenuPages[pageID];
             if (!page->enabled) {
                 break;
             }
             pause_badges_get_pos_y(pageID, 0);
 
             // 1e7c
-            for (indexInPage = 0; indexInPage < page->count; ++indexInPage) {
+            for (indexInPage = 0; indexInPage < page->count; indexInPage++) {
                 s16* playerEquippedBadges = &gPlayerData.equippedBadges;
                 ItemID itemID = gBadgeMenuItemIDs[page->startIndex + indexInPage];
                 s32 equipped = 0;
+                s32 itemInvalid;
+                s32 thisBadgeIsSelected = FALSE;
                 s32 canEquipThisBadge = FALSE;
                 s32 badgePosX;
                 s32 badgePosY;
-                s32 itemInvalid;
                 s32 offsetX;
                 s32 offsetY;
-                s32 badgeSelected;
+                s32 i;
 
-                badgeSelected = FALSE;
                 if (itemID == 0x7FFF) {
                     continue;
                 }
@@ -492,7 +498,7 @@ void pause_badges_draw_contents(s32 dummy, s32 menuX, s32 menuY, s32 menuWidth, 
                 badgePosX = pause_badges_get_pos_x(pageID, indexInPage);
                 badgePosY = pause_badges_get_pos_y(pageID, indexInPage);
                 itemInvalid = itemID == 0x7FFE;
-                for (i = 0; i < 0x40; ++i) {
+                for (i = 0; i < ARRAY_COUNT(gPlayerData.equippedBadges); i++) {
                     if (itemID == playerEquippedBadges[i]) {
                         equipped = 1;
                         break;
@@ -500,9 +506,10 @@ void pause_badges_draw_contents(s32 dummy, s32 menuX, s32 menuY, s32 menuWidth, 
                 }
                 // 1f34
                 if ((gPauseMenuCurrentTab == 2) && (gBadgeMenuLevel == 1) && (pause_badges_get_column(pageID, indexInPage) == selectedCol) && (pause_badges_get_row(pageID, indexInPage) == selectedRow)) {
-                    badgeSelected = TRUE;
+                    s32 localItemID = itemID;
+                    thisBadgeIsSelected = TRUE;
                     if (!itemInvalid) {
-                        selectedBadgeCostBP = gMoveTable[gItemTable[itemID].moveID].costBP;
+                        selectedBadgeCostBP = gMoveTable[gItemTable[localItemID].moveID].costBP;
                         if (!equipped && (availableBP >= selectedBadgeCostBP)) {
                             canEquipSelectedBadge = TRUE;
                         }
@@ -514,7 +521,7 @@ void pause_badges_draw_contents(s32 dummy, s32 menuX, s32 menuY, s32 menuWidth, 
                 }
                 offsetX = 0;
                 offsetY = 0;
-                if (badgeSelected) {
+                if (thisBadgeIsSelected) {
                     // 2048
                     offsetX = -1;
                     offsetY = -1;
@@ -525,7 +532,7 @@ void pause_badges_draw_contents(s32 dummy, s32 menuX, s32 menuY, s32 menuWidth, 
                     // 2058
                     msgStyle = 1;
                     msgPalette = 0xA;
-                    if (badgeSelected) {
+                    if (thisBadgeIsSelected) {
                         // 206c
                         msgStyle = 9;
                     }
@@ -541,11 +548,11 @@ void pause_badges_draw_contents(s32 dummy, s32 menuX, s32 menuY, s32 menuWidth, 
                 // 2134
                 if (pause_badges_is_visible(badgePosY) != 0) {
                     if (layer == 0) {
-                        s32 posX;
-                        s32 posY;
                         // Draw badge row text (name and BP)
+
                         if (itemInvalid) {
                             // 215c
+                            s32 posX;
                             s32 msgID = pause_get_menu_msg(0x45);
                             posX = badgeListX + pause_badges_scroll_offset_x(badgePosX) + offsetX;
                             draw_msg(msgID, posX, badgeListY + pause_badges_scroll_offset_y(badgePosY) + offsetY, 0xFF, msgPalette, msgStyle);
@@ -554,16 +561,16 @@ void pause_badges_draw_contents(s32 dummy, s32 menuX, s32 menuY, s32 menuWidth, 
                             if (gItemTable[itemID].nameMsg != 0) {
                                 if (gItemTable[itemID].nameMsg > 0) {
                                     // 21dc
-                                    posX = badgeListX + pause_badges_scroll_offset_x(badgePosX) + offsetX;
+                                    s32 posX = badgeListX + pause_badges_scroll_offset_x(badgePosX) + offsetX;
                                     draw_msg(gItemTable[itemID].nameMsg, posX, badgeListY + pause_badges_scroll_offset_y(badgePosY) + offsetY, 0xFF, msgPalette, msgStyle);
                                 }
                             }
                             // 2224
                             {
-                                s32 scrollOffsetX = pause_badges_scroll_offset_x(badgePosX) + 0xEB;
-                                s32 posX = menuX + scrollOffsetX;
-                                s32 scrollOffsetY = pause_badges_scroll_offset_y(badgePosY) + 0x11;
-                                s32 posY = menuY + scrollOffsetY;
+                                s32 orbsPosX = 0xEB;
+                                s32 orbsPosY = 0x11;
+                                s32 posX = menuX + (pause_badges_scroll_offset_x(badgePosX) + orbsPosX);
+                                s32 posY = menuY + (pause_badges_scroll_offset_y(badgePosY) + orbsPosY);
                                 draw_number(gMoveTable[gItemTable[itemID].moveID].costBP, posX, posY, 1, msgPalette, 0xFF, 3);
                             }
                         }
@@ -573,9 +580,10 @@ void pause_badges_draw_contents(s32 dummy, s32 menuX, s32 menuY, s32 menuWidth, 
                         // Draw badge icons
 
                         // 22b0
-                        s32* iconIDs = gBadgeMenuIconIDs;
                         s32 posX;
-                        s32 iconID = iconIDs[iconSlot];
+                        s32 iconID;
+
+                        iconID = iconIDs[iconSlot];
                         clear_hud_element_flags(iconID, 0x20000000);
                         set_hud_element_flags(iconID, 0x8000);
                         if (itemInvalid) {
@@ -584,7 +592,7 @@ void pause_badges_draw_contents(s32 dummy, s32 menuX, s32 menuY, s32 menuWidth, 
                         } else {
                             HudElementAnim* badgeIcon;
                             // 22fc
-                            if (badgeSelected) {
+                            if (thisBadgeIsSelected) {
                                 set_hud_element_flags(iconID, 0x20000000);
                                 gPauseMenuCurrentDescIconScript = D_8008A680[gItemTable[itemID].iconID].unk0;
                             }
@@ -619,33 +627,36 @@ void pause_badges_draw_contents(s32 dummy, s32 menuX, s32 menuY, s32 menuWidth, 
                     // 2430
                     if ((layer == 2) && !itemInvalid) {
                         // Draw per-badge BP orbs
+                        #define BADGE_BP_ROW(i) ((i)/5)
+                        #define BADGE_BP_COL(i) ((i) - (BADGE_BP_ROW(i)*5))
 
                         s32 badgeCostBP = gMoveTable[gItemTable[itemID].moveID].costBP;
-                        s32 offsetY = badgeCostBP <= 10 ? 4 : 1;
+                        s32 orbOffsetY = badgeCostBP <= 10 ? 4 : 1;
+                        s32 orbsPosX = 0xEB;
+                        s32 orbsPosY = 0x11;
+
+                        s32 orbMaskR = 0x00;
+                        s32 orbMaskG = 0xFF;
+                        s32 orbMaskB = 0x64;
+
                         // 248c
                         gSPDisplayList(gMasterGfxPos++, &D_8026F348);
                         gDPSetTextureFilter(gMasterGfxPos++, G_TF_BILERP);
                         // 24d8
                         if (!equipped) {
                             // 24e0
-                            s32 singleRow = badgeCostBP < 5;
                             for (i = 0; i < badgeCostBP; ++i) {
                                 // 24f0
-                                s32 row, col, x, y;
-                                s32 scrollOffsetX;
-                                s32 scrollOffsetY;
+                                s32 singleRow = badgeCostBP < 5;
+                                s32 x, y;
+
                                 gDPSetPrimColor(gMasterGfxPos++, 0, 0, 0xE3, 0xE3, 0xE3, 0xFF);
                                 // 2518
-                                scrollOffsetX = pause_badges_scroll_offset_x(badgePosX) + 0xEB;
-                                row = i / 5;
-                                col = i - (row*5);
-                                x = menuX + scrollOffsetX + (col*6 + 1);
-                                scrollOffsetY = pause_badges_scroll_offset_y(badgePosY) + 0x11;
-                                y = menuY + scrollOffsetY + offsetY;
+                                x = menuX + (pause_badges_scroll_offset_x(badgePosX) + orbsPosX) + 1 + BADGE_BP_COL(i)*6;
+                                y = menuY + (pause_badges_scroll_offset_y(badgePosY) + orbsPosY) + orbOffsetY;
                                 if (!singleRow) {
-                                    //2580
-                                    y -= 3;
-                                    y += row*6;
+                                    // 2580
+                                    y += BADGE_BP_ROW(i)*6 - 3;
                                 }
                                 // 2594
                                 pause_badges_draw_bp_orbs(0, x, y);
@@ -653,45 +664,34 @@ void pause_badges_draw_contents(s32 dummy, s32 menuX, s32 menuY, s32 menuWidth, 
                             // 25b0
                             gDPPipeSync(gMasterGfxPos++);
                             gDPSetRenderMode(gMasterGfxPos++, G_RM_CLD_SURF, G_RM_CLD_SURF2);
-                            gDPSetPrimColor(gMasterGfxPos++, 0, 0, 0x00, 0xFF, 0x64, 0x80);
+                            gDPSetPrimColor(gMasterGfxPos++, 0, 0, orbMaskR, orbMaskG, orbMaskB, 0x80);
                             // 2628
-                            for (i = 0; i < badgeCostBP; ++i) {
+                            for (i = 0; i < badgeCostBP; i++) {
+                                s32 singleRow = badgeCostBP < 5;
                                 // 2630
                                 if (i < availableBP) {
-                                    s32 row = i / 5;
-                                    s32 col = i - (row*5);
-                                    s32 x = menuX + pause_badges_scroll_offset_x(badgePosX) + 0xEB + col*6 + 1;
-                                    s32 y = menuY + pause_badges_scroll_offset_y(badgePosY) + 0x11 + offsetY;
+                                    s32 row, col, x, y;
+                                    // 2644
+                                    x = menuX + (pause_badges_scroll_offset_x(badgePosX) + orbsPosX) + 1 + BADGE_BP_COL(i)*6;
+                                    y = menuY + (pause_badges_scroll_offset_y(badgePosY) + orbsPosY) + orbOffsetY;
                                     if (!singleRow) {
                                         // 26ac
-                                        y -= 3;
-                                        y += row*6;
+                                        y += BADGE_BP_ROW(i)*6 - 3;
                                     }
                                     // 26c0
-                                    pause_badges_draw_bp_orbs(2, x, y);
+                                    pause_badges_draw_bp_orbs(1, x, y);
                                 }
                             }
                         } else {
-                            #define BADGE_BP_ROW(i) ((i)/5)
-                            #define BADGE_BP_COL(i) ((i) - (BADGE_BP_ROW(i)*5))
                             // 26e4
-                            gDPSetPrimColor(gMasterGfxPos++, 0, 0, 0x00, 0xFF, 0x64, 0xFF);
+                            gDPSetPrimColor(gMasterGfxPos++, 0, 0, orbMaskR, orbMaskG, orbMaskB, 0xFF);
                             for (i = 0; i < badgeCostBP; ++i) {
                                 // 2708
-                                s32 x = pause_badges_scroll_offset_x(badgePosX) + 0xEB;
-                                s32 tmp;
-                                s32 y;
-                                x += menuX;
-                                tmp = BADGE_BP_COL(i)*6 + 1;
-                                x += tmp;
-                                //s32 x = pause_badges_scroll_offset_x(badgePosX) + 0xEB + menuX + (BADGE_BP_COL(i)*6 + 1);
-                                y = pause_badges_scroll_offset_y(badgePosY) + 0x11;
-                                y += menuY;
-                                y += offsetY;
+                                s32 x = menuX + (pause_badges_scroll_offset_x(badgePosX) + orbsPosX) + 1 + BADGE_BP_COL(i)*6;
+                                s32 y = menuY + (pause_badges_scroll_offset_y(badgePosY) + orbsPosY) + orbOffsetY;
                                 if (badgeCostBP >= 5) {
                                     // 2774
-                                    y -= 3;
-                                    y += BADGE_BP_ROW(i)*6;
+                                    y += BADGE_BP_ROW(i)*6 - 3;
                                 }
                                 // 2788
                                 pause_badges_draw_bp_orbs(2, x, y);
@@ -727,17 +727,14 @@ void pause_badges_draw_contents(s32 dummy, s32 menuX, s32 menuY, s32 menuWidth, 
         gDPSetScissor(gMasterGfxPos++, 0, scissorULx, scissorULy, scissorLRx, scissorLRy);
         // 2954
         if ((gPauseMenuCurrentTab == 2) && (gBadgeMenuLevel == 1)) {
-            s32 pageID = gBadgeMenuCurrentPage;
-            if (pageID > 0) {
+            // 297c
+            if (gBadgeMenuCurrentPage > 0) {
                 // Draw upward "Z" arrow
                 // 2990
                 set_hud_element_render_pos(gBadgeMenuIconIDs[17], menuX + 0x116, menuY + 0xE);
                 draw_hud_element_3(gBadgeMenuIconIDs[17]);
-                pageID = gBadgeMenuCurrentPage + 1;
-            } else {
-                pageID += 1;
             }
-            if (gBadgeMenuPages[pageID].enabled != 0) {
+            if (gBadgeMenuPages[gBadgeMenuCurrentPage + 1].enabled != 0) {
                 // Draw downward "R" arrow
                 // 29e4
                 set_hud_element_render_pos(gBadgeMenuIconIDs[18], menuX + 0x116, menuY + 0x92);
@@ -766,6 +763,7 @@ void pause_badges_draw_contents(s32 dummy, s32 menuX, s32 menuY, s32 menuWidth, 
         }
         // 2b2c
         {
+            s32 i;
             s32 maxBP = getMaxBP();
             u8 orbR = 0x00;
             u8 orbG = 0xFF;
@@ -790,19 +788,25 @@ void pause_badges_draw_contents(s32 dummy, s32 menuX, s32 menuY, s32 menuWidth, 
                 f64 beatState;
                 gDPSetPrimColor(gMasterGfxPos++, 0, 0, orbR, orbG, orbB, 0xFF);
                 // 2c74
-                for (i = 0; i < (availableBP - selectedBadgeCostBP); ++i) {
+                for (i = 0; i < (availableBP - selectedBadgeCostBP); i++) {
                     // Color unused BP orbs orange
                     s32 row = i / 10;
                     s32 col = i - (row*10);
                     pause_badges_draw_bp_orbs(2, menuX + 0xB + col*6, menuY + 0x5C + row*8);
                 }
                 // 2cf8
-                gDPPipeSync(gMasterGfxPos++);
-                beatState = (sin_deg(gGameStatusPtr->frameCounter * 15) + 1.0f) * 0.2;
-                gDPSetRenderMode(gMasterGfxPos++, G_RM_CLD_SURF, G_RM_CLD_SURF2);
-                gDPSetPrimColor(gMasterGfxPos++, 0, 0, orbR, orbG, orbB, (s8)((f32)(beatState + 0.5) * 255));
+                {
+                    f64 beatState;
+                    s8 beatAlpha;
+
+                    gDPPipeSync(gMasterGfxPos++);
+                    beatState = (sin_deg(gGameStatusPtr->frameCounter * 15) + 1.0f) * 0.2;
+                    beatAlpha = (f32)(beatState + 0.5) * 255;
+                    gDPSetRenderMode(gMasterGfxPos++, G_RM_CLD_SURF, G_RM_CLD_SURF2);
+                    gDPSetPrimColor(gMasterGfxPos++, 0, 0, orbR, orbG, orbB, beatAlpha);
+                }
                 // 2dec
-                for (i = (availableBP - selectedBadgeCostBP); i < availableBP; ++i) {
+                for (i = (availableBP - selectedBadgeCostBP); i < availableBP; i++) {
                     // Oscillate color of BP orbs that will be used
                     s32 row = i / 10;
                     s32 col = i - (row*10);
@@ -812,7 +816,7 @@ void pause_badges_draw_contents(s32 dummy, s32 menuX, s32 menuY, s32 menuWidth, 
             } else {
                 gDPSetPrimColor(gMasterGfxPos++, 0, 0, orbR, orbG, orbB, 0xFF);
                 // 2ea0
-                for (i = 0; i < availableBP; ++i) {
+                for (i = 0; i < availableBP; i++) {
                     // Color unused BP orbs orange
                     s32 row = i / 10;
                     s32 col = i - (row*10);
@@ -821,8 +825,6 @@ void pause_badges_draw_contents(s32 dummy, s32 menuX, s32 menuY, s32 menuWidth, 
                 gDPPipeSync(gMasterGfxPos++);
             }
         }
-
-        // PERFECT MATCH BELOW THIS POINT
 
         // Draw "All Badges" box
         {
@@ -934,7 +936,6 @@ void pause_badges_draw_contents(s32 dummy, s32 menuX, s32 menuY, s32 menuWidth, 
                 func_80242D04(0x20, 0xA + menuX, menuY + offsetY);
             } else {
                 // 3170
-                // Perfect match
                 s32 posX = 
                     pause_badges_get_pos_x(gBadgeMenuCurrentPage, 
                         gBadgeMenuSelectedIndex - (
@@ -966,7 +967,6 @@ void pause_badges_draw_contents(s32 dummy, s32 menuX, s32 menuY, s32 menuWidth, 
             }
         }
         // 327c
-        // Perfect match
         if (gBadgeMenuBShowNotEnoughBP != 0) {
             // Draw error message popups
             pause_set_cursor_opacity(0);
@@ -981,9 +981,9 @@ void pause_badges_draw_contents(s32 dummy, s32 menuX, s32 menuY, s32 menuWidth, 
     }
     
 }
-#else
-INCLUDE_ASM(s32, "pause/138CC0", pause_badges_draw_contents);
-#endif
+//#else
+//INCLUDE_ASM(s32, "pause/138CC0", pause_badges_draw_contents);
+//#endif
 
 void pause_badges_load_badges(s32 onlyEquipped) {
     PlayerData* playerData = &gPlayerData;
