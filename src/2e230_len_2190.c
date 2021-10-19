@@ -1,4 +1,5 @@
 #include "audio.h"
+#include "nu/nusys.h"
 
 void func_80052E30(u8 index) {
     UnkAl48* temp = &D_8009A5C0->unk_1320[index];
@@ -477,7 +478,63 @@ void snd_get_sequence_player(u32 playerIndex, BGMPlayer** outPlayer) {
     }
 }
 
-INCLUDE_ASM(s32, "2e230_len_2190", snd_load_song_files);
+s32 func_8004DB28(BGMPlayer *); // extern
+
+typedef struct Mystery {
+    s32 unk_00;
+    s32 unk_04;
+    s32 unk_08;
+    s32 unk_0C;
+} Mystery;
+
+s32 snd_load_song_files(u32 arg0, void* arg1, void* arg2a) {
+    BGMPlayer* arg2 = (BGMPlayer*) arg2a;
+    Mystery* asdf = (Mystery*) arg1;
+    AudioFileHeader header;
+    UnkAl19E0* temp_s2;
+
+    temp_s2 = D_8009A5C0;
+    if (arg0 < temp_s2->songListLength) {
+        int i;
+        s32 fetchResult;
+        s32 bgmFileIndex;
+        InitSongEntry* songEntry = &temp_s2->songList[arg0];
+
+        fetchResult = snd_fetch_SBN_file(songEntry->bgmFileIndex, sizeof(header), &header);
+        if (fetchResult != 0) {
+            return fetchResult;
+        }
+
+        if (func_8004DB28(arg2) != 0) {
+            return 0xC9;
+        }
+
+        snd_read_rom(header.unk_00, asdf, header.len & 0xFFFFFF);
+
+        for (i = 0; i < ARRAY_COUNT(songEntry->bkFileIndex); i++) {
+            u16 fileIndex = songEntry->bkFileIndex[i];
+
+            if (fileIndex != 0) {
+                SBNFileEntry* fileEntry = &temp_s2->sbnFileList[fileIndex];
+
+                header.unk_08 = (fileEntry->offset & 0xFFFFFF) + temp_s2->baseRomOffset;
+                header.unk_0C = *(s32*)&fileEntry->fmt;
+                if ((header.unk_0C >> 24) == 0x30) {
+                    snd_load_BK(header.unk_08, i);
+                }
+            }
+        }
+
+        bgmFileIndex = songEntry->bgmFileIndex;
+        arg2->bgmFileIndex = bgmFileIndex;
+        arg2->songID = arg0;
+        arg2->unk_64 = arg1;
+        // extra write to avoid regalloc weirdness
+        arg2->bgmFileIndex = bgmFileIndex;
+        return asdf->unk_08;
+    }
+    return 0x97;
+}
 
 INCLUDE_ASM(s32, "2e230_len_2190", func_80053E58);
 
@@ -503,13 +560,140 @@ BGMPlayer* func_80054248(u8 arg0) {
     }
 }
 
+// Lots of garbage here
+#ifdef NON_MATCHING
+typedef struct Header40 {
+    s32 unk_00;
+    s32 unk_04;
+    s32 unk_08;
+    s32 unk_0C;
+    s32 unk_10;
+    s32 unk_14;
+    s32 unk_18;
+    s32 unk_1C;
+    s32 unk_20;
+    s32 unk_24;
+    s32 unk_28;
+    s32 unk_2C;
+    s32 unk_30;
+    s32 unk_34;
+    s32 unk_38;
+    s32 unk_3C;
+} Header40; // size = 0x40
+typedef struct Header20 {
+    s32 unk_00;
+    s32 unk_04;
+    u16 unk_08;
+    u16 unk_0A;
+    u16 unk_0C;
+    u16 unk_0E;
+    u16 unk_10;
+    u16 unk_12;
+    s32 unk_14;
+    s32 unk_18;
+    s32 unk_1C;
+} Header20; // size = 0x20
+void snd_load_INIT(UnkAl19E0 *arg0, s32 romAddr, ALHeap *heap) {
+    Header40 hdr40;
+    Header20 hdr20;
+    SBNFileEntry *temp_a1_2;
+    s32 temp_s0;
+    s32 temp_s2;
+    s32 temp_s2_2;
+    SBNFileEntry *phi_a1;
+    s8 *phi_a0;
+    s32* ptrB;
+    s32 i;
+    s32* baseOffsetPtr = &arg0->baseRomOffset;
+    s32 itemSize;
+
+    snd_read_rom(romAddr, &hdr40, sizeof(hdr40));
+    *baseOffsetPtr = romAddr;
+    temp_s0 = hdr40.unk_14 * 8;
+    arg0->fileListLength = hdr40.unk_14;
+    arg0->sbnFileList = alHeapAlloc(heap, 1, temp_s0);
+    snd_read_rom(*baseOffsetPtr + hdr40.unk_10, arg0->sbnFileList, temp_s0);
+
+    temp_a1_2 = arg0->sbnFileList;
+    ptrB = &temp_a1_2[0].fmt;
+    while (hdr40.unk_14-- != 0) {
+        if (((temp_a1_2++)->offset & 0xFFFFFF) == 0) {
+            break;
+        }
+        itemSize = *ptrB;
+        *ptrB = ALIGN16(itemSize);
+        ptrB += 4;
+    }
+
+    if (hdr40.unk_24 != 0) {
+        // 1578
+        s32 dataOffset = *baseOffsetPtr + hdr40.unk_24;
+
+        snd_read_rom(dataOffset, &hdr20, sizeof(hdr20));
+        // 158c
+        itemSize = (hdr20.unk_0E + 0xF) & 0xFFF0;
+        romAddr = dataOffset + hdr20.unk_0C;
+        arg0->songList = alHeapAlloc(heap, 1, itemSize);
+        snd_read_rom(romAddr, arg0->songList, itemSize);
+        // 15c4
+        itemSize = (hdr20.unk_12 + 0xF) & 0xFFF0;
+        romAddr = hdr20.unk_10 + dataOffset;
+        arg0->mseqFileList = alHeapAlloc(heap, 1, itemSize);
+        snd_read_rom(romAddr, arg0->mseqFileList, itemSize);
+
+        arg0->bkFileListOffset = dataOffset + hdr20.unk_08;
+        arg0->bkListLength = (hdr20.unk_0A + 0xF) & 0xFFF0;
+        arg0->songListLength = (hdr20.unk_0E / 8) - 1;
+    }
+}
+#else
 INCLUDE_ASM(void, "2e230_len_2190", snd_load_INIT, UnkAl19E0* arg0, s32 arg1, ALHeap* arg2);
+#endif
 
 INCLUDE_ASM(s32, "2e230_len_2190", snd_fetch_SBN_file, u16 arg0, s32 arg1, s32* arg2);
 
-INCLUDE_ASM(void, "2e230_len_2190", snd_load_PER, UnkAl19E0* arg0, s32* arg1);
+void snd_load_PER(UnkAl19E0 *arg0, s32 *arg1) {
+    s32 header[4];
+    u32 dataSize;
+    s32 recordCount;
+    s32 extraRecords;
 
-INCLUDE_ASM(void, "2e230_len_2190", snd_load_PRG, UnkAl19E0* arg0, s32* arg1);
+    snd_read_rom((s32) arg1, &header, sizeof(header));
+    dataSize = header[1] - sizeof(header);
+    snd_read_rom((s32) (arg1 + 4), arg0->dataPER, dataSize);
+    recordCount = dataSize / 0x90;
+
+    extraRecords = 6 - recordCount;
+    if (extraRecords > 0) {
+        s8* dummyRecordStart = (s8*)arg0->dataPER + (recordCount * 0x90);
+        snd_copy_words((s32 *) &arg0->unk_08, dummyRecordStart, 0xC);
+        snd_copy_words(dummyRecordStart, dummyRecordStart + 0xC, (extraRecords * 0x90) - 0xC);
+    }
+}
+
+void snd_load_PRG(UnkAl19E0 *arg0, s32 *arg1) {
+    s32 header[4];
+    u32 dataSize;
+    u32 recordCount;
+    s32 numDefaultRecords;
+    s32 addr2;
+
+    snd_read_rom((s32) arg1, &header, sizeof(header));
+    dataSize = header[1] - sizeof(header);
+    addr2 = (s32) (arg1 + 4);
+    if (dataSize > 0x200) {
+        dataSize = 0x200;
+    }
+    snd_read_rom(addr2, arg0->dataPRG, dataSize);
+    recordCount = dataSize / 8;
+
+    numDefaultRecords = 0x40 - recordCount;
+    if (numDefaultRecords > 0) {
+        s8* dummyRecordStart = (s8*)arg0->dataPRG + (recordCount * 8);
+        snd_copy_words((s32 *) &arg0->defaultPRGEntry, (s32*)dummyRecordStart, 8);
+        snd_copy_words(dummyRecordStart, dummyRecordStart + 8, (numDefaultRecords * 8) - 8);
+    }
+}
 
 INCLUDE_ASM(s32, "2e230_len_2190", snd_load_BGM);
 
@@ -522,22 +706,22 @@ InstrumentGroup* snd_get_BK_instruments(s32 bankGroup, u32 bankIndex) {
 
     switch (bankGroup) {
         case 1:
-            ret = temp->instrumentGroup1[bankIndex / 16];
+            ret = &temp->instrumentGroup1[bankIndex / 16];
             break;
         case 2:
-            ret = temp->instrumentGroup2[bankIndex / 16];
+            ret = &temp->instrumentGroup2[bankIndex / 16];
             break;
         case 4:
-            ret = temp->instrumentGroup4[bankIndex / 16];
+            ret = &temp->instrumentGroup4[bankIndex / 16];
             break;
         case 5:
-            ret = temp->instrumentGroup5[bankIndex / 16];
+            ret = &temp->instrumentGroup5[bankIndex / 16];
             break;
         case 6:
-            ret = temp->instrumentGroup6[bankIndex / 16];
+            ret = &temp->instrumentGroup6[bankIndex / 16];
             break;
         case 3:
-            ret = temp->instrumentGroup3[bankIndex / 16];
+            ret = &temp->instrumentGroup3[bankIndex / 16];
             break;
     }
 
@@ -550,39 +734,39 @@ void snd_swizzle_BK_instruments(s32 bkFileOffset, SoundBank* bank, InstrumentGro
                                 u8 arg4);
 // float weirdness
 #ifdef NON_MATCHING
-void snd_swizzle_BK_instruments(s32 bkFileOffset, SoundBank* bank, Instruments instruments, u32 instrumentCount,
-                                u8 arg4) {
-    SoundBank* sb = bank;
-    Instrument* defaultInstrument = D_8009A5C0->defaultInstrument;
-    f32 freq = D_8009A5C0->actualFrequency;
-    s32 i;
-
-    if (sb->swizzled == 0) {
-        for (i = 0; i < instrumentCount; i++) {
-            Instrument* instrument = instruments[i];
-
-            if (instrument != NULL) {
-                if (instrument->wavOffset != 0) {
-                    instrument->wavOffset += bkFileOffset;
-                }
-                if (instrument->loopPredictorOffset != 0) {
-                    instrument->loopPredictorOffset += (s32)bank;
-                }
-                if (instrument->predictorOffset != 0) {
-                    instrument->predictorOffset += (s32)bank;
-                }
-                if (instrument->unkOffset != 0) {
-                    instrument->unkOffset += (s32)bank;
-                }
-                instrument->unk_25 = arg4;
-                instrument->sampleRate = (instrument->sampleRate / freq);
-            } else {
-                instruments[i] = defaultInstrument;
-            }
-        }
-        sb->swizzled = 1;
-    }
-}
+//void snd_swizzle_BK_instruments(s32 bkFileOffset, SoundBank* bank, Instruments instruments, u32 instrumentCount,
+//                                u8 arg4) {
+//    SoundBank* sb = bank;
+//    Instrument* defaultInstrument = D_8009A5C0->defaultInstrument;
+//    f32 freq = D_8009A5C0->actualFrequency;
+//    s32 i;
+//
+//    if (sb->swizzled == 0) {
+//        for (i = 0; i < instrumentCount; i++) {
+//            Instrument* instrument = instruments[i];
+//
+//            if (instrument != NULL) {
+//                if (instrument->wavOffset != 0) {
+//                    instrument->wavOffset += bkFileOffset;
+//                }
+//                if (instrument->loopPredictorOffset != 0) {
+//                    instrument->loopPredictorOffset += (s32)bank;
+//                }
+//                if (instrument->predictorOffset != 0) {
+//                    instrument->predictorOffset += (s32)bank;
+//                }
+//                if (instrument->unkOffset != 0) {
+//                    instrument->unkOffset += (s32)bank;
+//                }
+//                instrument->unk_25 = arg4;
+//                instrument->sampleRate = (instrument->sampleRate / freq);
+//            } else {
+//                instruments[i] = defaultInstrument;
+//            }
+//        }
+//        sb->swizzled = 1;
+//    }
+//}
 #else
 INCLUDE_ASM(void, "2e230_len_2190", snd_swizzle_BK_instruments, s32 bkFileOffset, SoundBank* bank,
             InstrumentGroup instruments, s32 instrumentCount, u8 arg4);
@@ -596,9 +780,40 @@ s32 snd_load_BK(s32 arg0, s32 arg1) {
     return 0;
 }
 
-INCLUDE_ASM(s32, "2e230_len_2190", func_80054C84);
+void func_80054C84(u32 bankIndex, s32 bankGroup) {
+    Instrument* defaultInstrument = D_8009A5C0->defaultInstrument;
+    InstrumentGroup* group;
+    Instrument** instruments;
+    u32 i;
 
-INCLUDE_ASM(void, "2e230_len_2190", func_80054CE0, s32 arg0, s32 arg1);
+    group = snd_get_BK_instruments(bankGroup, bankIndex);
+    instruments = &group[0];
+    if (!group) {
+        return;
+    }
+
+    for (i = 0; i < ARRAY_COUNT(*group); i++, instruments++) {
+        *instruments = defaultInstrument;
+    }
+}
+
+extern u16 D_80078530[10];
+
+void func_80054CE0(u32 arg0, u32 arg1) {
+    if (arg1 < 9U) {
+        s32 unkVar = D_80078530[arg1];
+        if (arg0 & 0x01) {
+            D_8009A664->unk_48 = unkVar;
+            func_80053AC8((UnkAl1 *) &D_8009A664->fadeInfo);
+            D_8009A5FC->unk_48 = unkVar;
+            func_80053AC8((UnkAl1 *) &D_8009A5FC->fadeInfo);
+        }
+        if (arg0 & 0x10) {
+            D_8009A640->unk_5C = unkVar;
+            func_80053AC8(&D_8009A640->unk_40);
+        }
+    }
+}
 
 s32 func_80054D74(s32 arg0, s32 arg1) {
     if (arg0 & 0x10) {
@@ -607,11 +822,79 @@ s32 func_80054D74(s32 arg0, s32 arg1) {
     return 0;
 }
 
-INCLUDE_ASM(s32, "2e230_len_2190", func_80054DA8);
+void func_80054DA8(s32 arg0) {
+    if ((arg0 & 1) == 1U) {
+        if (D_8009A5C0->unk_130C == 0) {
+            D_8009A5C0->unk_130C = 2;
+        }
+    } else if (D_8009A5C0->unk_130C != 0) {
+        D_8009A5C0->unk_50 = 1;
+        D_8009A5C0->unk_130C = 0;
+    }
+}
 
-INCLUDE_ASM(void, "2e230_len_2190", snd_read_rom, s32 arg0, s32* arg1, s32 arg2);
+#define SND_ROM_BLOCK_SIZE 8192
+void snd_read_rom(s32 romAddr, void* destAddr, u32 size) {
+    u32 numBlocks = size / SND_ROM_BLOCK_SIZE;
+    u32 offset = 0;
 
-INCLUDE_ASM(s32, "2e230_len_2190", snd_memset);
+    if (numBlocks > 0) {
+        numBlocks--;
+        do {
+            nuPiReadRom(romAddr + offset, (s8*)destAddr + offset, SND_ROM_BLOCK_SIZE);
+            offset += SND_ROM_BLOCK_SIZE;
+        } while(numBlocks-- > 0);
+    }
+
+    size &= (SND_ROM_BLOCK_SIZE-1);
+    if (size != 0) {
+        nuPiReadRom(romAddr + offset, (s8*)destAddr + offset, size);
+    }
+}
+
+void snd_memset(s8* arr, s32 len, s8 value) {
+    s32 i;
+    s32 copyLen;
+    s32 valueWord;
+
+    if (len == 0) {
+        return;
+    }
+
+    if (len < 0x400) {
+        while (len-- != 0) {
+            *arr++ = value;
+        }
+        return;
+    }
+
+    // Align arr to s32
+    copyLen = (s32)arr & 3;
+    if (copyLen != 0) {
+        copyLen = 4 - copyLen;
+        len -= copyLen;
+        while (copyLen-- != 0) {
+            *arr++ = value;
+        }
+    }
+
+    // Write with aligned words
+    copyLen = len >> 2;
+    valueWord = ((value & 0xFF) << 8) + (value & 0xFF);
+    valueWord = (valueWord << 16) + valueWord;
+    while (copyLen-- != 0) {
+        *(s32*)arr = valueWord;
+        arr += 4;
+    }
+
+    // Fixup remaining bytes
+    copyLen = len & 3;
+    if (copyLen != 0) {
+        while (copyLen-- != 0) {
+            *arr++ = value;
+        }
+    }
+}
 
 void snd_bcopy(s8* src, s8* dest, s32 size) {
     if (size > 0) {

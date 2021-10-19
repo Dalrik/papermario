@@ -295,8 +295,8 @@ typedef struct SBNFileEntry {
 } SBNFileEntry; // size = 0x8
 
 typedef struct InitSongEntry {
-    /* 0x0 */ s16 bgmFileIndex; // required BGM file
-    /* 0x2 */ s16 bkFileIndex[3]; // optional BK files for this track
+    /* 0x0 */ u16 bgmFileIndex; // required BGM file
+    /* 0x2 */ u16 bkFileIndex[3]; // optional BK files for this track
 } InitSongEntry; // size = 0x8
 
 typedef struct UnkAl19E0Sub {
@@ -537,6 +537,13 @@ typedef struct UnkAl834 {
     /* 0x7B4 */ UnkAl8 unk_7B4[16];
 } UnkAl834;
 
+typedef struct AudioFileHeader {
+    /* 0x00 */ s32 unk_00;
+    /* 0x04 */ s32 len;
+    /* 0x08 */ u32 unk_08;
+    /* 0x0C */ u32 unk_0C;
+} AudioFileHeader; // size = 0x10
+
 extern u8 D_80078181;
 extern s32 D_80078190;
 extern s32 D_800781D0;
@@ -653,7 +660,7 @@ void func_80053A98(u8, u16, s32);
 void func_80053AEC(UnkAl1*, s16);
 void func_80053BA8(UnkAl1*);
 s32 func_80053BE8(UnkAl19E0*, s32, s32, s32*);
-void func_80054CE0(s32, s32);
+void func_80054CE0(u32, u32);
 void func_8005610C(void);
 
 void func_80055110(BGMPlayer*);
@@ -696,7 +703,7 @@ void snd_load_INIT(UnkAl19E0*, s32, ALHeap*);
 s32 snd_fetch_SBN_file(u16, s32, s32*);
 void snd_load_PER(UnkAl19E0*, s32*);
 void snd_load_PRG(UnkAl19E0*, s32*);
-void snd_read_rom(s32, s32*, s32);
+void snd_read_rom(s32, void*, u32);
 
 #undef alHeapAlloc
 void* alHeapAlloc(ALHeap *heap, s32 arg1, s32 size);
